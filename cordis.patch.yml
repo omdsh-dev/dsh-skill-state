@@ -1,0 +1,11 @@
+# Install this package into a DSH profile with `dsh plugin --profile web add`.
+# The row id is local to the consuming profile; the package name is stable.
+- insert:
+    - id: skill-state
+      name: '@deepseek-ai/dsh-skill-state'
+      config:
+        maxFacts: 50
+        maxDecisions: 30
+        maxPlanItems: 20
+        maxErrors: 20
+        maxObservationChars: 8000

@@ -1,23 +1,18 @@
-/** Structured execution state plugin for long-horizon agents. */
-import type { Context } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+/** DSH Skill State: bounded structured execution state for long-horizon agents. */
+export { Config, resolveConfig, type ResolvedConfig } from "./config.ts";
+export { apply } from "./runtime.ts";
+export {
+  applyPatch,
+  deriveToolPatch,
+  emptyState,
+  foldState,
+  normalizePatch,
+  type PlanItem,
+  type SkillState,
+  type SkillStateAgent,
+  type SkillStateEventData,
+  type SkillStatePatch,
+} from "./state.ts";
+export { inject, name } from "./plugin.ts";
 
-export const name = 'skill-state'
-export const inject = ['systemPrompt', 'tools']
-export interface PlanItem { id: string; description: string; status: 'todo'|'doing'|'done'|'blocked' }
-export interface SkillState { task:{goal:string;constraints:string[];acceptanceCriteria:string[]}; plan:PlanItem[]; repository:{branch?:string;changedFiles:string[];importantFiles:string[]}; decisions:{decision:string;reason?:string}[]; facts:string[]; verification:{lastCommand?:string;status:'unknown'|'pass'|'fail';errors:string[]}; blockers:string[]; nextAction?:string }
-export type SkillStatePatch = Partial<{task:Partial<SkillState['task']>;plan:PlanItem[];repository:Partial<SkillState['repository']>;decisions:SkillState['decisions'];facts:string[];verification:Partial<SkillState['verification']>;blockers:string[];nextAction:string}>
-export interface Config { maxFacts?:number; maxDecisions?:number; maxPlanItems?:number; maxErrors?:number }
-export const Config:z<Config> = z.object({maxFacts:z.number().step(1).min(1).default(50),maxDecisions:z.number().step(1).min(1).default(30),maxPlanItems:z.number().step(1).min(1).default(20),maxErrors:z.number().step(1).min(1).default(20)})
-const empty=():SkillState=>({task:{goal:'',constraints:[],acceptanceCriteria:[]},plan:[],repository:{changedFiles:[],importantFiles:[]},decisions:[],facts:[],verification:{status:'unknown',errors:[]},blockers:[]})
-declare module '@deepseek-ai/dsh-session/types'{interface SessionEventMap{'skill-state/update':{state:SkillState;patch:SkillStatePatch;source:'agent'|'reducer'}}}
-const copy=<T,>(v:T):T=>structuredClone(v)
-const limit=(v:string[],n:number)=>[...new Set(v.filter(Boolean))].slice(-n)
-export function applyPatch(old:SkillState,p:SkillStatePatch,c:Required<Config>):SkillState{const s:SkillState={...old,task:{...old.task,...p.task},repository:{...old.repository,...p.repository},verification:{...old.verification,...p.verification},plan:p.plan??old.plan,decisions:p.decisions??old.decisions,facts:p.facts??old.facts,blockers:p.blockers??old.blockers,...p.nextAction===undefined?{}:{nextAction:p.nextAction}};s.task.constraints=limit(s.task.constraints,c.maxFacts);s.task.acceptanceCriteria=limit(s.task.acceptanceCriteria,c.maxFacts);s.plan=s.plan.slice(-c.maxPlanItems);s.decisions=s.decisions.slice(-c.maxDecisions);s.facts=limit(s.facts,c.maxFacts);s.blockers=limit(s.blockers,c.maxFacts);s.verification.errors=limit(s.verification.errors,c.maxErrors);return copy(s)}
-export class SkillStateStore{private readonly map=new Map<string,SkillState>();constructor(private readonly c:Required<Config>){}get(a:Agent){let s=this.map.get(String(a.id));if(!s){s=empty();for(const e of a.session.snapshotEvents())if(e.type==='skill-state/update')s=copy((e as Extract<SessionEvent,{type:'skill-state/update'}>).data.state);this.map.set(String(a.id),s)}return copy(s)}patch(a:Agent,p:SkillStatePatch,source:'agent'|'reducer'='agent'){const s=applyPatch(this.get(a),p,this.c);this.map.set(String(a.id),s);a.session.append('skill-state/update',{state:copy(s),patch:copy(p),source});return copy(s)}}
-export function apply(ctx:Context,config:Config={}):SkillStateStore{const c={maxFacts:config.maxFacts??50,maxDecisions:config.maxDecisions??30,maxPlanItems:config.maxPlanItems??20,maxErrors:config.maxErrors??20};const store=new SkillStateStore(c);ctx.systemPrompt.context({name:'skill-state:runtime',order:35,text:({scope})=>{const a=scope as unknown as Agent|undefined;return a&&typeof a==='object'&&'session' in a?`<runtime_state>\n${JSON.stringify(store.get(a))}\n</runtime_state>`:''}});ctx.systemPrompt.section({name:'skill-state:policy',order:19,text:'Keep only verified facts that change future actions. Use state_patch to persist decisions, plan transitions, verification, blockers, and the next action. Runtime state is canonical; old reasoning is not.'});ctx.tools.register(defineTool({name:'state_patch',description:'Persist a bounded structured patch to the current execution state.',parameters:{patch:{type:'object',required:true,additionalProperties:true,properties:{}}},output:{schema:{type:'object',additionalProperties:true,properties:{}},render:(_a,v)=>[{type:'text',text:JSON.stringify(v)}]},execute(args,exec){if(!exec.agent)throw new Error('state_patch requires an agent');const s=store.patch(exec.agent,args.patch as SkillStatePatch);return Promise.resolve(s as unknown as Record<string, unknown> as never)}}));ctx.on('tools/result',(exec:ToolExecution,result:ToolExecutionResult)=>{if(!exec.agent||exec.name==='state_patch')return;const a=exec.arguments as {command?:unknown};const command=typeof a.command==='string'?a.command:exec.name;const l=command.toLowerCase();if(l.includes('test')||l.includes('pytest')||l.includes('vitest'))store.patch(exec.agent,{verification:{lastCommand:command,status:result.isError?'fail':'pass',errors:result.isError?[result.error.message]:[]}},'reducer')});return store}
-export default apply
+export { apply as default } from "./runtime.ts";
