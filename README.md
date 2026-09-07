@@ -27,6 +27,9 @@ DSH 插件只保留经过验证的 `ΔΣ_t`，把它应用到 `Σ_t`，然后继
 ```sh
 npx -y @deepseek-ai/dsh plugin --profile web add github:omdsh-dev/dsh-skill-state
 npx -y @deepseek-ai/dsh --profile web
+# TUI 同样适用：
+npx -y @deepseek-ai/dsh plugin --profile tui add github:omdsh-dev/dsh-skill-state
+npx -y @deepseek-ai/dsh --profile tui
 ```
 
 也可以安装本地 checkout：
